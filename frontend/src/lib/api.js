@@ -10,14 +10,29 @@ export function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+// Admin token (only needed when the backend sets ADMIN_TOKEN). Kept in
+// sessionStorage so it is entered once per browser session.
+const TOKEN_KEY = "punjabi_ocr_admin_token";
+export const getAdminToken = () => sessionStorage.getItem(TOKEN_KEY) || "";
+export const setAdminToken = (t) =>
+  t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY);
+
+function adminHeaders(extra = {}) {
+  const token = getAdminToken();
+  return token ? { ...extra, "X-Admin-Token": token } : extra;
+}
+
 async function asError(res) {
+  let detail;
   try {
     const body = await res.json();
-    if (body.detail) return new Error(body.detail);
+    detail = body.detail;
   } catch {
     /* not JSON */
   }
-  return new Error(`Request failed (${res.status})`);
+  const err = new Error(detail || `Request failed (${res.status})`);
+  err.status = res.status;
+  return err;
 }
 
 export async function uploadImage(file) {
@@ -47,7 +62,7 @@ export function downloadUrl(id, refined) {
 }
 
 export async function getSettings() {
-  const res = await fetch(apiUrl("/api/admin/settings"));
+  const res = await fetch(apiUrl("/api/admin/settings"), { headers: adminHeaders() });
   if (!res.ok) throw await asError(res);
   return res.json();
 }
@@ -55,7 +70,7 @@ export async function getSettings() {
 export async function saveSettings(payload) {
   const res = await fetch(apiUrl("/api/admin/settings"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: adminHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw await asError(res);

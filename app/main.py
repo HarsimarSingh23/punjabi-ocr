@@ -5,7 +5,7 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -60,6 +60,17 @@ app.add_middleware(
 
 db.init()
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+def require_admin(x_admin_token: str | None = Header(default=None)) -> None:
+    """Gate the admin settings endpoints when ADMIN_TOKEN is configured.
+
+    With no ADMIN_TOKEN set (e.g. local dev) the endpoints stay open; once it is
+    set, callers must send a matching X-Admin-Token header.
+    """
+    expected = os.environ.get("ADMIN_TOKEN")
+    if expected and x_admin_token != expected:
+        raise HTTPException(401, "Admin token required or invalid.")
 
 
 def _spa_index() -> FileResponse:
@@ -163,7 +174,7 @@ def download_result(rid: str, refined: bool = False):
     return PlainTextResponse(text, headers=headers)
 
 
-@app.get("/api/admin/settings")
+@app.get("/api/admin/settings", dependencies=[Depends(require_admin)])
 def get_admin_settings():
     settings = db.get_settings()
     out: dict[str, object] = {}
@@ -178,7 +189,7 @@ def get_admin_settings():
     return out
 
 
-@app.post("/api/admin/settings")
+@app.post("/api/admin/settings", dependencies=[Depends(require_admin)])
 def update_admin_settings(payload: dict = Body(...)):
     updates: dict[str, str] = {}
     for key, value in payload.items():

@@ -72,8 +72,13 @@ Open <http://localhost:8000/admin>:
   deployment name, API version).
 
 Keys are stored in the local `data.db` SQLite file and are only shown back
-masked. The admin portal has no authentication — run this app locally or put
-it behind your own auth before exposing it.
+masked.
+
+**Protecting the admin portal:** set an `ADMIN_TOKEN` environment variable on the
+backend. When set, the admin settings endpoints require an `X-Admin-Token`
+header, and the admin page shows a lock screen that prompts for the token once
+per browser session. With `ADMIN_TOKEN` unset (local dev) the portal stays open.
+Always set it when the backend is publicly reachable.
 
 You can also supply any setting through an **environment variable** (the env var
 name is the UPPERCASE setting key). DB values from the admin portal take
@@ -89,6 +94,7 @@ ephemeral:
 | `NVIDIA_API_KEY`, `NVIDIA_MODEL` | NVIDIA vision OCR |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI refinement |
 | `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_DEPLOYMENT`, `AZURE_API_VERSION` | Azure OpenAI refinement |
+| `ADMIN_TOKEN` | If set, the admin portal requires this token (recommended in production) |
 
 ## Deployment (frontend on Cloudflare Pages, backend elsewhere)
 
@@ -99,7 +105,8 @@ The frontend and backend can be hosted separately.
 
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Set the provider env vars above, plus `ALLOWED_ORIGINS` = your Pages URL
-  (e.g. `https://punjabi-ocr.pages.dev`) so the browser can call the API.
+  (e.g. `https://punjabi-ocr.pages.dev`) so the browser can call the API, and
+  `ADMIN_TOKEN` to lock the admin portal.
 - Note: the container filesystem is ephemeral, so `uploads/` and `data.db` reset
   on redeploy — fine, since keys come from env vars. Add a persistent disk if you
   want uploads/OCR history to survive restarts.

@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 import AuroraBackground from "./AuroraBackground.jsx";
 import TopBar from "./TopBar.jsx";
-import { getSettings, saveSettings } from "../lib/api.js";
+import { getSettings, saveSettings, setAdminToken } from "../lib/api.js";
 import { ToastProvider, useToast } from "../lib/useToast.jsx";
 
 const SECRET_FIELDS = [
@@ -45,10 +45,11 @@ function AdminForm() {
   const [values, setValues] = useState(EMPTY);
   const [saved, setSaved] = useState({}); // which secrets already have a stored value
   const [busy, setBusy] = useState(false);
+  const [locked, setLocked] = useState(false); // backend wants an admin token
   const toast = useToast();
 
-  useEffect(() => {
-    getSettings()
+  function load() {
+    return getSettings()
       .then((s) => {
         const next = { ...EMPTY };
         next.ocr_provider = s.ocr_provider || "google";
@@ -58,9 +59,23 @@ function AdminForm() {
         for (const k of SECRET_FIELDS) savedFlags[k] = s[k] && s[k].set ? s[k].hint || "saved" : "";
         setValues(next);
         setSaved(savedFlags);
+        setLocked(false);
+        return true;
       })
-      .catch((e) => toast(e.message));
+      .catch((e) => {
+        if (e.status === 401) setLocked(true);
+        else toast(e.message);
+        return false;
+      });
+  }
+
+  useEffect(() => {
+    load();
   }, []);
+
+  if (locked) {
+    return <TokenGate onUnlock={load} toast={toast} />;
+  }
 
   const set = (k) => (e) => setValues((v) => ({ ...v, [k]: e.target.value }));
 
@@ -79,6 +94,7 @@ function AdminForm() {
       setSaved(flags);
       toast("Settings saved ✓");
     } catch (err) {
+      if (err.status === 401) setLocked(true);
       toast(err.message);
     }
     setBusy(false);
@@ -194,6 +210,56 @@ function AdminForm() {
         <div className="admin-actions">
           <button type="submit" className="cta small" disabled={busy}>
             {busy ? "Saving…" : "Save settings"}
+          </button>
+        </div>
+      </motion.form>
+    </main>
+  );
+}
+
+function TokenGate({ onUnlock, toast }) {
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function unlock(e) {
+    e.preventDefault();
+    if (!token.trim()) return;
+    setBusy(true);
+    setAdminToken(token.trim());
+    const ok = await onUnlock();
+    if (!ok) {
+      setAdminToken("");
+      toast("Invalid admin token.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <main className="admin-main">
+      <motion.form
+        className="admin-card token-gate"
+        onSubmit={unlock}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+      >
+        <h1>Admin locked 🔒</h1>
+        <p>This backend requires an admin token to view or change provider keys.</p>
+        <div className="field">
+          <label htmlFor="admin_token">Admin token</label>
+          <input
+            id="admin_token"
+            type="password"
+            autoComplete="off"
+            autoFocus
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="value of the backend's ADMIN_TOKEN"
+          />
+        </div>
+        <div className="admin-actions">
+          <button type="submit" className="cta small" disabled={busy || !token.trim()}>
+            {busy ? "Unlocking…" : "Unlock"}
           </button>
         </div>
       </motion.form>
