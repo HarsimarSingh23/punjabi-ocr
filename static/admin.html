@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Punjabi OCR Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">ੴ</span>
+    <span class="brand-name">Punjabi OCR <span class="brand-sub">Admin</span></span>
+  </div>
+  <a class="admin-link" href="/">← Back to app</a>
+</header>
+
+<main class="admin-main">
+  <form class="admin-card" id="settings-form">
+    <h1>API keys &amp; providers</h1>
+    <p>Keys are stored in the app's local database and never shown back in full.</p>
+
+    <fieldset>
+      <legend>OCR engine</legend>
+      <div class="provider-row" id="ocr-provider-row">
+        <label><input type="radio" name="ocr_provider" value="google" checked> Google Cloud Vision</label>
+        <label><input type="radio" name="ocr_provider" value="azure"> Azure AI Vision</label>
+      </div>
+
+      <div class="provider-group" id="group-ocr-google">
+        <div class="field">
+          <label for="google_api_key">Google API key <span class="badge" id="badge-google">saved ✓</span></label>
+          <input type="password" id="google_api_key" name="google_api_key"
+                 autocomplete="off" placeholder="AIza…">
+          <div class="hintline">
+            Create one in the
+            <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud console</a>
+            with the Cloud Vision API enabled.
+          </div>
+        </div>
+      </div>
+
+      <div class="provider-group off" id="group-ocr-azure">
+        <div class="field">
+          <label for="azure_vision_endpoint">Endpoint</label>
+          <input type="url" id="azure_vision_endpoint" name="azure_vision_endpoint"
+                 placeholder="https://my-resource.cognitiveservices.azure.com">
+        </div>
+        <div class="field">
+          <label for="azure_vision_key">Azure Vision key <span class="badge" id="badge-azure-vision">saved ✓</span></label>
+          <input type="password" id="azure_vision_key" name="azure_vision_key" autocomplete="off">
+          <div class="hintline">
+            Works with an Azure AI Services or Computer Vision resource
+            (Image Analysis 4.0 Read). The keys are under
+            <em>Resource Management → Keys and Endpoint</em> in the Azure portal.
+          </div>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>AI text refinement</legend>
+      <div class="provider-row" id="provider-row">
+        <label><input type="radio" name="ai_provider" value=""> None</label>
+        <label><input type="radio" name="ai_provider" value="openai"> OpenAI</label>
+        <label><input type="radio" name="ai_provider" value="azure"> Azure OpenAI</label>
+      </div>
+
+      <div class="provider-group off" id="group-openai">
+        <div class="field">
+          <label for="openai_api_key">OpenAI API key <span class="badge" id="badge-openai">saved ✓</span></label>
+          <input type="password" id="openai_api_key" name="openai_api_key"
+                 autocomplete="off" placeholder="sk-…">
+        </div>
+        <div class="field">
+          <label for="openai_model">Model</label>
+          <input type="text" id="openai_model" name="openai_model" placeholder="gpt-4o-mini">
+        </div>
+      </div>
+
+      <div class="provider-group off" id="group-azure">
+        <div class="field">
+          <label for="azure_endpoint">Endpoint</label>
+          <input type="url" id="azure_endpoint" name="azure_endpoint"
+                 placeholder="https://my-resource.openai.azure.com">
+        </div>
+        <div class="field">
+          <label for="azure_api_key">Azure API key <span class="badge" id="badge-azure">saved ✓</span></label>
+          <input type="password" id="azure_api_key" name="azure_api_key" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="azure_deployment">Deployment name</label>
+          <input type="text" id="azure_deployment" name="azure_deployment" placeholder="gpt-4o-mini">
+        </div>
+        <div class="field">
+          <label for="azure_api_version">API version</label>
+          <input type="text" id="azure_api_version" name="azure_api_version"
+                 placeholder="leave blank for the v1 API (recommended)">
+          <div class="hintline">
+            Blank uses the modern <code>/openai/v1</code> route (best for new deployments).
+            Set a version like <code>2024-06-01</code> only for older resources.
+          </div>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="admin-actions">
+      <button type="submit" class="cta small">Save settings</button>
+      <span class="status" id="save-status"></span>
+    </div>
+  </form>
+</main>
+
+<div id="toast" hidden></div>
+<script src="/static/admin.js"></script>
+</body>
+</html>

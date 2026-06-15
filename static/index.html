@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Punjabi OCR Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">ੴ</span>
+    <span class="brand-name">Punjabi OCR <span class="brand-sub" lang="pa">ਪੰਜਾਬੀ ਓ.ਸੀ.ਆਰ.</span></span>
+  </div>
+  <a class="admin-link" href="/admin">⚙ Admin</a>
+</header>
+
+<main id="stage">
+  <section id="upload-pane">
+    <div id="dropzone" tabindex="0" role="button" aria-label="Upload an image">
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden>
+      <div class="dz-icon">🖼️</div>
+      <h2>Drop a Punjabi image here</h2>
+      <p>or <button type="button" class="linkish" id="browse-btn">browse files</button> · JPG, PNG or WebP · up to 12&nbsp;MB</p>
+    </div>
+  </section>
+
+  <section id="workspace" hidden>
+    <div id="left-pane" class="pane">
+      <div class="pane-head">
+        <h3>Source image</h3>
+        <button id="reset-btn" class="ghost" type="button">↺ New image</button>
+      </div>
+      <div id="image-wrap">
+        <div id="image-stage">
+          <img id="source-image" alt="Uploaded document">
+          <svg id="box-layer" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div id="scan-beam" hidden></div>
+        </div>
+      </div>
+      <div class="pane-foot">
+        <button id="start-ai" class="cta" type="button">✨ Start AI</button>
+        <span id="left-status" class="status" role="status"></span>
+      </div>
+    </div>
+
+    <div id="right-pane" class="pane">
+      <div class="pane-head">
+        <h3>Extracted text</h3>
+        <span id="right-status" class="status"></span>
+      </div>
+      <div id="text-flow" class="text-flow" lang="pa"></div>
+      <div class="pane-foot" id="result-actions" hidden>
+        <button id="download-btn" class="cta small" type="button">⬇ Download .txt</button>
+        <button id="copy-btn" class="ghost" type="button">⧉ Copy</button>
+        <button id="refine-btn" class="ghost" type="button">🪄 Refine with AI</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="fly-layer" aria-hidden="true"></div>
+<div id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
