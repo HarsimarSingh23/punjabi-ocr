@@ -98,6 +98,9 @@ ephemeral:
 
 ## Deployment (frontend on Cloudflare Pages, backend elsewhere)
 
+For a free, step-by-step walkthrough (Cloudflare Pages + Render free tier with a
+`render.yaml` blueprint), see **[DEPLOY.md](DEPLOY.md)**.
+
 The frontend and backend can be hosted separately.
 
 **Backend** (Render / Railway / Fly.io / any Docker host) — a `Dockerfile` and
