@@ -75,6 +75,46 @@ Keys are stored in the local `data.db` SQLite file and are only shown back
 masked. The admin portal has no authentication — run this app locally or put
 it behind your own auth before exposing it.
 
+You can also supply any setting through an **environment variable** (the env var
+name is the UPPERCASE setting key). DB values from the admin portal take
+precedence; env vars fill in the rest — handy for hosted deploys where the DB is
+ephemeral:
+
+| Env var | Purpose |
+| --- | --- |
+| `OCR_PROVIDER` | `google`, `azure`, or `nvidia` |
+| `AI_PROVIDER` | `openai`, `azure`, or empty |
+| `GOOGLE_API_KEY` | Google Cloud Vision key |
+| `AZURE_VISION_ENDPOINT`, `AZURE_VISION_KEY` | Azure AI Vision |
+| `NVIDIA_API_KEY`, `NVIDIA_MODEL` | NVIDIA vision OCR |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | OpenAI refinement |
+| `AZURE_ENDPOINT`, `AZURE_API_KEY`, `AZURE_DEPLOYMENT`, `AZURE_API_VERSION` | Azure OpenAI refinement |
+
+## Deployment (frontend on Cloudflare Pages, backend elsewhere)
+
+The frontend and backend can be hosted separately.
+
+**Backend** (Render / Railway / Fly.io / any Docker host) — a `Dockerfile` and
+`Procfile` are included:
+
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Set the provider env vars above, plus `ALLOWED_ORIGINS` = your Pages URL
+  (e.g. `https://punjabi-ocr.pages.dev`) so the browser can call the API.
+- Note: the container filesystem is ephemeral, so `uploads/` and `data.db` reset
+  on redeploy — fine, since keys come from env vars. Add a persistent disk if you
+  want uploads/OCR history to survive restarts.
+
+**Frontend** (Cloudflare Pages):
+
+- Project root: `frontend`  ·  Build command: `npm run build`  ·  Output dir: `dist`
+- Build-time env var `VITE_API_BASE` = your backend URL
+  (e.g. `https://punjabi-ocr-api.onrender.com`).
+- SPA routing is handled by `frontend/public/_redirects` (`/* → /index.html`).
+
+With `VITE_API_BASE` empty (the default), the frontend uses relative paths, so
+the single-server setup (FastAPI serving `frontend/dist`) keeps working
+unchanged for local development.
+
 ## Layout
 
 ```

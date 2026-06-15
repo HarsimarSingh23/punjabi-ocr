@@ -1,10 +1,30 @@
 """SQLite storage for settings (API keys) and OCR results."""
 
 import contextlib
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data.db"
+DB_PATH = Path(os.environ.get("DATA_DB_PATH") or Path(__file__).resolve().parent.parent / "data.db")
+
+# Settings that can be supplied through environment variables (env var name is
+# the upper-cased key). Values saved via the admin portal take precedence; env
+# vars fill in anything not set in the DB — handy for hosted deploys.
+ENV_SETTING_KEYS = (
+    "ocr_provider",
+    "ai_provider",
+    "google_api_key",
+    "azure_vision_endpoint",
+    "azure_vision_key",
+    "nvidia_api_key",
+    "nvidia_model",
+    "openai_api_key",
+    "openai_model",
+    "azure_endpoint",
+    "azure_api_key",
+    "azure_deployment",
+    "azure_api_version",
+)
 
 
 def _conn() -> sqlite3.Connection:
@@ -34,9 +54,16 @@ def init() -> None:
 
 
 def get_settings() -> dict[str, str]:
+    # env vars provide defaults; values saved in the DB override them
+    settings = {}
+    for key in ENV_SETTING_KEYS:
+        value = os.environ.get(key.upper())
+        if value:
+            settings[key] = value
     with contextlib.closing(_conn()) as c:
         rows = c.execute("SELECT key, value FROM settings").fetchall()
-    return {r["key"]: r["value"] for r in rows}
+    settings.update({r["key"]: r["value"] for r in rows})
+    return settings
 
 
 def set_settings(values: dict[str, str]) -> None:

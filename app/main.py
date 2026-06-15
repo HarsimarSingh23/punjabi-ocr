@@ -1,10 +1,12 @@
 """Punjabi OCR web app — FastAPI backend."""
 
 import json
+import os
 import uuid
 from pathlib import Path
 
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -43,6 +45,19 @@ VALID_AI_PROVIDERS = {"", "openai", "azure"}
 VALID_OCR_PROVIDERS = {"", "google", "azure", "nvidia"}
 
 app = FastAPI(title="Punjabi OCR")
+
+# When the frontend is hosted separately (e.g. Cloudflare Pages), set
+# ALLOWED_ORIGINS to its URL(s), comma-separated. Defaults to "*" since the API
+# carries no cookies/credentials.
+_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins or ["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 db.init()
 UPLOAD_DIR.mkdir(exist_ok=True)
 

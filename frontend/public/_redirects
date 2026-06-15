@@ -1,0 +1,3 @@
+# Cloudflare Pages: serve the SPA shell for client-side routes (e.g. /admin).
+# Existing files (assets, _redirects) are served first; this is the fallback.
+/*    /index.html    200
