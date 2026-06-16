@@ -22,6 +22,9 @@ ALLOWED_IMAGE_TYPES = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+# HEIC/HEIF (common from iPhone cameras) is accepted and converted to JPEG.
+HEIC_TYPES = {"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"}
+HEIC_EXTS = (".heic", ".heif")
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 SECRET_KEYS = {
@@ -88,20 +91,46 @@ def index() -> FileResponse:
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
-    ext = ALLOWED_IMAGE_TYPES.get(file.content_type or "")
-    if not ext:
-        raise HTTPException(400, "Please upload a JPEG, PNG or WebP image.")
+    content_type = (file.content_type or "").lower()
+    filename = (file.filename or "").lower()
+    is_heic = content_type in HEIC_TYPES or filename.endswith(HEIC_EXTS)
+    ext = ALLOWED_IMAGE_TYPES.get(content_type)
+    if not ext and not is_heic:
+        raise HTTPException(400, "Please upload a JPEG, PNG, WebP or HEIC image.")
+
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(400, "Image is too large (max 12 MB).")
     if not data:
         raise HTTPException(400, "The uploaded file is empty.")
 
+    if not ext:  # HEIC/HEIF — convert to JPEG so every OCR engine can read it
+        data = _heic_to_jpeg(data)
+        ext = ".jpg"
+
     rid = uuid.uuid4().hex[:12]
     path = UPLOAD_DIR / f"{rid}{ext}"
     path.write_bytes(data)
     db.create_result(rid, file.filename, str(path))
     return {"id": rid, "image_url": f"/uploads/{path.name}"}
+
+
+def _heic_to_jpeg(data: bytes) -> bytes:
+    import io
+
+    try:
+        import pillow_heif
+        from PIL import Image
+
+        pillow_heif.register_heif_opener()
+        image = Image.open(io.BytesIO(data)).convert("RGB")
+        out = io.BytesIO()
+        image.save(out, format="JPEG", quality=92)
+        return out.getvalue()
+    except Exception as exc:  # noqa: BLE001 — surface a friendly message for any decode failure
+        raise HTTPException(
+            400, "Could not read this HEIC image. Please try a JPG or PNG instead."
+        ) from exc
 
 
 @app.post("/api/ocr/{rid}")
