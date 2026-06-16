@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 data.db
 uploads/
-frontend/
-static/.DS_Store
+frontend/node_modules/
+frontend/dist/
 .git/
 .DS_Store

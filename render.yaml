@@ -1,19 +1,14 @@
-# Render blueprint for the backend (free tier). The frontend deploys separately
-# to Cloudflare Pages — see DEPLOY.md.
-#
-# Native Python runtime keeps free-tier builds fast. A Dockerfile is also
-# included if you prefer a container host.
+# Render blueprint — single all-in-one web service (free tier).
+# The Docker image builds the React frontend and serves it together with the
+# FastAPI API, so there is just one service and one URL (no CORS needed).
 services:
   - type: web
-    name: punjabi-ocr-api
-    runtime: python
+    name: punjabi-ocr
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.2"
       # OCR provider defaults (override in the dashboard if you switch engines)
       - key: OCR_PROVIDER
         value: nvidia
@@ -23,8 +18,4 @@ services:
       - key: NVIDIA_API_KEY
         sync: false
       - key: ADMIN_TOKEN
-        sync: false
-      # Set to your Cloudflare Pages URL once the frontend is deployed,
-      # e.g. https://punjabi-ocr.pages.dev  (use * to bootstrap)
-      - key: ALLOWED_ORIGINS
         sync: false
