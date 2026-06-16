@@ -9,6 +9,16 @@ The frontend is a **React (Vite + framer-motion)** single-page app; the backend
 is FastAPI. In production the backend serves the built React bundle, so a single
 `uvicorn` process runs the whole thing.
 
+## Deploy
+
+One-click deploy to Render (free tier, all-in-one):
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/HarsimarSingh23/punjabi-ocr)
+
+After it spins up, set `NVIDIA_API_KEY` and `ADMIN_TOKEN` in the Render
+dashboard. Full walkthrough (and the Cloudflare Pages split option) in
+**[DEPLOY.md](DEPLOY.md)**.
+
 ## How it works
 
 1. Drop an image into the upload pane — it splits into two panes.

@@ -9,6 +9,13 @@ it, so there's one service, one URL, and no CORS to configure.
 > uploaded images and OCR history reset on redeploy — your API keys come from
 > env vars, so that's fine.
 
+## One-click
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/HarsimarSingh23/punjabi-ocr)
+
+This reads [`render.yaml`](render.yaml) and creates the service; then jump to
+step 3 to set your keys. Or follow the manual steps below.
+
 ## Steps
 
 1. **Push to GitHub** (already done for this repo).
