@@ -14,6 +14,7 @@ const SECRET_FIELDS = [
   "azure_api_key",
 ];
 const PLAIN_FIELDS = [
+  "page_columns",
   "azure_vision_endpoint",
   "nvidia_model",
   "openai_model",
@@ -27,6 +28,7 @@ const EMPTY = {
   ai_provider: "",
   ...Object.fromEntries(PLAIN_FIELDS.map((k) => [k, ""])),
   ...Object.fromEntries(SECRET_FIELDS.map((k) => [k, ""])),
+  page_columns: "auto",
 };
 
 export default function AdminPage() {
@@ -55,6 +57,7 @@ function AdminForm() {
         next.ocr_provider = s.ocr_provider || "google";
         next.ai_provider = s.ai_provider || "";
         for (const k of PLAIN_FIELDS) next[k] = s[k] || "";
+        next.page_columns = s.page_columns || "auto";
         const savedFlags = {};
         for (const k of SECRET_FIELDS) savedFlags[k] = s[k] && s[k].set ? s[k].hint || "saved" : "";
         setValues(next);
@@ -168,9 +171,33 @@ function AdminForm() {
               <Text id="nvidia_model" label="Vision model"
                 placeholder="meta/llama-3.2-11b-vision-instruct"
                 value={values.nvidia_model} onChange={set("nvidia_model")}
-                hint="A vision-capable model from integrate.api.nvidia.com. This engine returns plain text (no word boxes), so words animate from the image rather than from exact boxes." />
+                hint="A vision-capable model from integrate.api.nvidia.com. In a multi-column layout it switches to a grounded JSON mode that returns per-line boxes (box accuracy depends on the model); single-column mode returns plain text." />
             </>
           )}
+
+          <div className="field">
+            <label>Page layout</label>
+            <div className="provider-row">
+              <Radio name="page_columns" value="auto" current={values.page_columns} onChange={set("page_columns")}>
+                Auto
+              </Radio>
+              <Radio name="page_columns" value="1" current={values.page_columns} onChange={set("page_columns")}>
+                1 column
+              </Radio>
+              <Radio name="page_columns" value="2" current={values.page_columns} onChange={set("page_columns")}>
+                2 columns
+              </Radio>
+              <Radio name="page_columns" value="3" current={values.page_columns} onChange={set("page_columns")}>
+                3 columns
+              </Radio>
+            </div>
+            <div className="hintline">
+              Column-aware reading order. <b>Auto</b> detects columns (and leaves single-column
+              pages untouched); pick a fixed count for multi-column scans like dictionaries or
+              newspapers. Google/Azure reorder their word boxes by column; NVIDIA vision uses a
+              grounded JSON mode for per-line boxes.
+            </div>
+          </div>
         </fieldset>
 
         <fieldset>
