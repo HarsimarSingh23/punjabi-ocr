@@ -13,3 +13,7 @@ frontend/dist/
 
 # OS
 .DS_Store
+
+# Local test artifacts
+test_image/
+logs/

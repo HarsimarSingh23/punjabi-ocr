@@ -13,7 +13,7 @@ AZURE_ANALYZE_PATH = "/computervision/imageanalysis:analyze"
 AZURE_API_VERSION = "2023-10-01"
 
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-NVIDIA_DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct"
+NVIDIA_DEFAULT_MODEL = "google/diffusiongemma-26b-a4b-it"
 NVIDIA_OCR_PROMPT = (
     "You are an OCR engine. Transcribe ALL text in this image exactly as it "
     "appears, preserving the original line breaks. The text is primarily Punjabi "
@@ -134,9 +134,30 @@ async def run_azure_ocr(image_bytes: bytes, endpoint: str, api_key: str) -> dict
     }
 
 
+def _downscale_for_api(image_bytes: bytes, max_side: int = 1500) -> bytes:
+    """Shrink very large images before sending — cuts payload and latency. Boxes
+    stay correct because the model returns normalized (0-1000) coordinates that
+    we later scale to the original pixel size."""
+    import io
+
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            if max(img.size) <= max_side:
+                return image_bytes
+            img = img.convert("RGB")
+            img.thumbnail((max_side, max_side))
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=88)
+            return out.getvalue()
+    except Exception:  # noqa: BLE001 — fall back to the original bytes
+        return image_bytes
+
+
 async def _nvidia_chat(image_bytes: bytes, api_key: str, model: str | None, prompt: str) -> str:
     """Send one image+prompt to the NVIDIA vision endpoint, return the reply text."""
-    b64 = base64.b64encode(image_bytes).decode()
+    b64 = base64.b64encode(_downscale_for_api(image_bytes)).decode()
     payload = {
         "model": model or NVIDIA_DEFAULT_MODEL,
         "messages": [
@@ -154,7 +175,7 @@ async def _nvidia_chat(image_bytes: bytes, api_key: str, model: str | None, prom
     }
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=240) as client:
             resp = await client.post(NVIDIA_URL, headers=headers, json=payload)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not reach NVIDIA: {exc}") from exc
