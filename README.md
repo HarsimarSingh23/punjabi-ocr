@@ -32,6 +32,62 @@ dashboard. Full walkthrough (and the Cloudflare Pages split option) in
    as a `.txt`, copy it, or run **🪄 Refine with AI** to fix OCR mistakes via
    the configured OpenAI / Azure OpenAI model.
 
+## Example: column-aware OCR with bounding boxes
+
+Multi-column pages (dictionaries, newspapers) must be read one column at a time,
+not straight across. With `page_columns` set to `auto` (or `2`), the engine
+returns word/line **bounding boxes** and the app reconstructs the correct
+reading order — left column fully, then the right column.
+
+Input — a two-column Punjabi (Gurmukhi) dictionary page:
+
+![Example two-column dictionary page](docs/example-dictionary-page.png)
+
+Running the NVIDIA vision engine (`google/diffusiongemma-26b-a4b-it`) in
+column-aware mode returns grounded boxes as JSON:
+
+```json
+{
+  "columns": [
+    { "lines": [
+      { "text": "ਅੰਗਸੂਤਰਾ", "box": [144, 23, 199, 36] },
+      { "text": "੧੦",        "box": [523, 23, 538, 36] }
+    ]},
+    { "lines": [
+      { "text": "ਅੰਗਸੂਤਰਾ, [ਪ੍ਰ. ਕਲਿਆਨਪੁਰ ਤੋਂ ਮ. ਕੰਨ+ਹਵਿੰਦਰ", "box": [116, 56, 477, 70] },
+      { "text": "ਪੂ. ਸਿਖ ਬੋਜ", "box": [149, 75, 233, 89] }
+    ]}
+  ]
+}
+```
+
+Boxes (normalised 0–1000) are scaled to image pixels and split into per-word
+sub-boxes; the words are then emitted in reading order. For this page the engine
+found **3 regions** (header → left column → right column) and **365 words, all
+with boxes**. The reconstructed text begins:
+
+```
+ਅੰਗਸੂਤਰਾ
+੧੦
+ਅੰਗਸੂਤਰਾ, [ਪ੍ਰ. ਕਲਿਆਨਪੁਰ ਤੋਂ ਮ. ਕੰਨ+ਹਵਿੰਦਰ
+ਪੂ. ਸਿਖ ਬੋਜ
+ਸਿਸ ਸਿੰਘ ਖੋਤਰੀ
+...
+```
+
+> Notes:
+> - `google/diffusiongemma-26b-a4b-it` is the NVIDIA-hosted model that works for
+>   this — `llama-3.2-*-vision` either hallucinates boxes or times out. Do **not**
+>   set `chat_template_kwargs.enable_thinking` (it returns empty content);
+>   `temperature=0` is used.
+> - Box geometry and column order are reliable; raw text has OCR errors (it's a
+>   general vision model, not a dedicated Gurmukhi OCR engine). Use **Refine with
+>   AI**, or switch the OCR engine to Google Cloud Vision for more literal text
+>   with the same column-aware reordering.
+> - Reproduce locally: `.venv/bin/python scripts/test_columns.py <image> 2` —
+>   the full API call and every bounding box are written to
+>   `logs/bounding_boxes.log`.
+
 ## Setup
 
 ```bash
