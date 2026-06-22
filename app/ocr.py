@@ -6,6 +6,8 @@ import base64
 import httpx
 from fastapi import HTTPException
 
+from . import layout
+
 VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 AZURE_ANALYZE_PATH = "/computervision/imageanalysis:analyze"
 AZURE_API_VERSION = "2023-10-01"
@@ -15,8 +17,21 @@ NVIDIA_DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct"
 NVIDIA_OCR_PROMPT = (
     "You are an OCR engine. Transcribe ALL text in this image exactly as it "
     "appears, preserving the original line breaks. The text is primarily Punjabi "
-    "in the Gurmukhi script. Output only the raw transcribed text — no "
-    "translation, no transliteration, no commentary, no markdown."
+    "in the Gurmukhi script. If the page has multiple columns separated by "
+    "vertical gaps or rules, read each column top-to-bottom and the columns "
+    "left-to-right — never read straight across the columns. Output only the raw "
+    "transcribed text — no translation, no transliteration, no commentary, no markdown."
+)
+# Structured, column-aware mode: ask the model to ground each line with a box.
+NVIDIA_LAYOUT_PROMPT = (
+    "You are a layout-aware OCR engine. The page is primarily Punjabi (Gurmukhi). "
+    "It may have multiple columns separated by vertical gaps or rules. Return ONLY "
+    "valid JSON (no markdown, no commentary) in exactly this schema:\n"
+    '{"columns": [{"lines": [{"text": "<line text>", "box": [x0, y0, x1, y1]}]}]}\n'
+    "Order columns left-to-right; within each column order lines top-to-bottom. "
+    "Each box is the line's bounding box as integers on a 0-1000 grid relative to "
+    "the image (x0,y0 = top-left corner, x1,y1 = bottom-right corner, origin at the "
+    "image's top-left). Transcribe text exactly; do not translate or transliterate."
 )
 
 # How Vision's detectedBreak types translate into text between words.
@@ -119,13 +134,8 @@ async def run_azure_ocr(image_bytes: bytes, endpoint: str, api_key: str) -> dict
     }
 
 
-async def run_nvidia_ocr(image_bytes: bytes, api_key: str, model: str | None = None) -> dict:
-    """OCR via an NVIDIA-hosted vision LLM (OpenAI-compatible chat completions).
-
-    A vision LLM returns plain text, not coordinates, so the words carry no
-    bounding boxes (box=None) — the front-end animates these by lifting them off
-    the scanned image rather than from precise boxes.
-    """
+async def _nvidia_chat(image_bytes: bytes, api_key: str, model: str | None, prompt: str) -> str:
+    """Send one image+prompt to the NVIDIA vision endpoint, return the reply text."""
     b64 = base64.b64encode(image_bytes).decode()
     payload = {
         "model": model or NVIDIA_DEFAULT_MODEL,
@@ -133,7 +143,7 @@ async def run_nvidia_ocr(image_bytes: bytes, api_key: str, model: str | None = N
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": NVIDIA_OCR_PROMPT},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 ],
             }
@@ -158,13 +168,42 @@ async def run_nvidia_ocr(image_bytes: bytes, api_key: str, model: str | None = N
         raise HTTPException(502, f"NVIDIA OCR error: {msg}")
 
     try:
-        text = body["choices"][0]["message"]["content"].strip()
+        return body["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, AttributeError):
         raise HTTPException(502, "NVIDIA returned an unexpected response.")
 
+
+async def run_nvidia_ocr(image_bytes: bytes, api_key: str, model: str | None = None) -> dict:
+    """Plain OCR via an NVIDIA vision LLM — returns text only (boxes are None)."""
+    text = await _nvidia_chat(image_bytes, api_key, model, NVIDIA_OCR_PROMPT)
     if not text:
         raise HTTPException(422, "No text was detected in this image.")
     return _words_from_text(text)
+
+
+async def run_nvidia_ocr_structured(
+    image_bytes: bytes,
+    api_key: str,
+    model: str | None,
+    width: int,
+    height: int,
+) -> dict:
+    """Column-aware OCR via the vision LLM with grounded line boxes.
+
+    Asks the model for structured JSON (columns -> lines -> {text, box}) and maps
+    the normalized boxes to pixels. Falls back to plain text OCR if the model's
+    JSON is unusable, so a weak spatial response never breaks OCR entirely.
+    """
+    reply = await _nvidia_chat(image_bytes, api_key, model, NVIDIA_LAYOUT_PROMPT)
+    data = layout.extract_json(reply)
+    if data:
+        result = layout.words_from_vision_json(data, width, height)
+        if result:
+            return result
+    # Fallback: still return the model's text, just without boxes/columns.
+    if reply:
+        return _words_from_text(reply)
+    raise HTTPException(422, "No text was detected in this image.")
 
 
 def _words_from_text(text: str) -> dict:

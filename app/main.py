@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, ocr, refine
+from . import db, layout, ocr, refine
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
@@ -36,6 +36,7 @@ SECRET_KEYS = {
 }
 PLAIN_KEYS = {
     "ocr_provider",
+    "page_columns",
     "azure_vision_endpoint",
     "nvidia_model",
     "ai_provider",
@@ -46,6 +47,7 @@ PLAIN_KEYS = {
 }
 VALID_AI_PROVIDERS = {"", "openai", "azure"}
 VALID_OCR_PROVIDERS = {"", "google", "azure", "nvidia"}
+VALID_PAGE_COLUMNS = {"", "auto", "1", "2", "3"}
 
 app = FastAPI(title="Punjabi OCR")
 
@@ -138,6 +140,7 @@ async def run_ocr(rid: str):
     row = _get_result_or_404(rid)
     settings = db.get_settings()
     image_bytes = Path(row["image_path"]).read_bytes()
+    columns = settings.get("page_columns") or "auto"  # auto | 1 | 2 | 3
 
     provider = settings.get("ocr_provider") or "google"
     if provider == "azure":
@@ -150,6 +153,7 @@ async def run_ocr(rid: str):
                 "Open the Admin portal (/admin) to set them.",
             )
         result = await ocr.run_azure_ocr(image_bytes, endpoint, api_key)
+        result = layout.reading_order_from_boxes(result, columns)
     elif provider == "nvidia":
         api_key = settings.get("nvidia_api_key")
         if not api_key:
@@ -157,7 +161,15 @@ async def run_ocr(rid: str):
                 400,
                 "NVIDIA API key is not configured. Open the Admin portal (/admin) to set it.",
             )
-        result = await ocr.run_nvidia_ocr(image_bytes, api_key, settings.get("nvidia_model"))
+        model = settings.get("nvidia_model")
+        if columns == "1":
+            result = await ocr.run_nvidia_ocr(image_bytes, api_key, model)
+        else:
+            # column-aware, grounded mode needs the true image size to map boxes
+            width, height = _image_size(image_bytes)
+            result = await ocr.run_nvidia_ocr_structured(
+                image_bytes, api_key, model, width, height
+            )
     else:
         api_key = settings.get("google_api_key")
         if not api_key:
@@ -166,8 +178,22 @@ async def run_ocr(rid: str):
                 "Google Vision API key is not configured. Open the Admin portal (/admin) to set it.",
             )
         result = await ocr.run_google_ocr(image_bytes, api_key)
+        result = layout.reading_order_from_boxes(result, columns)
     db.save_ocr(rid, json.dumps(result, ensure_ascii=False), result["full_text"])
     return result
+
+
+def _image_size(data: bytes) -> tuple[int, int]:
+    """Best-effort pixel dimensions of an image; (0, 0) if it can't be read."""
+    import io
+
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as img:
+            return img.width, img.height
+    except Exception:  # noqa: BLE001 — dimensions are a nice-to-have, not critical
+        return 0, 0
 
 
 @app.post("/api/refine/{rid}")
@@ -231,6 +257,8 @@ def update_admin_settings(payload: dict = Body(...)):
             raise HTTPException(400, "ai_provider must be 'openai', 'azure' or empty.")
         if key == "ocr_provider" and value not in VALID_OCR_PROVIDERS:
             raise HTTPException(400, "ocr_provider must be 'google', 'azure' or empty.")
+        if key == "page_columns" and value not in VALID_PAGE_COLUMNS:
+            raise HTTPException(400, "page_columns must be 'auto', '1', '2', '3' or empty.")
         updates[key] = value
     if updates:
         db.set_settings(updates)
