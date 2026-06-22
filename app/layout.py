@@ -204,6 +204,70 @@ def extract_json(text):
         return None
 
 
+# Matches a single {"text": "...", "box": [x0, y0, x1, y1]} object even when the
+# surrounding JSON is malformed or truncated (stops at the box's first ']', so a
+# stray extra ']' or a cut-off tail don't matter).
+_LINE_RE = re.compile(
+    r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"box"\s*:\s*'
+    r"\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,"
+    r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]"
+)
+
+
+def salvage_lines(text):
+    """Recover {text, box} line objects from a broken/truncated JSON reply.
+
+    The model occasionally emits invalid JSON (an extra bracket, a cut-off tail).
+    Rather than throw the whole page away, pull out every well-formed line object
+    in order. Returns a list of {"text", "box":[x0,y0,x1,y1]} or [] if none."""
+    lines = []
+    for m in _LINE_RE.finditer(text or ""):
+        try:
+            label = json.loads('"' + m.group(1) + '"')  # unescape JSON string
+        except json.JSONDecodeError:
+            label = m.group(1)
+        if not label.strip():
+            continue
+        box = [float(m.group(i)) for i in range(2, 6)]
+        lines.append({"text": label, "box": box})
+    return lines
+
+
+def words_from_salvaged(text, width, height):
+    """Build the words payload from salvaged line objects (reading order is the
+    model's emission order). Returns None if nothing could be recovered."""
+    lines = salvage_lines(text)
+    if not lines:
+        return None
+    return words_from_vision_json({"columns": [{"lines": lines}]}, width, height)
+
+
+_TEXT_FIELD_RE = re.compile(r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def text_from_reply(text):
+    """Return clean human-readable text from a model reply, NEVER raw JSON.
+
+    If the reply is (even broken) JSON, pull out the "text" field values and join
+    them; otherwise return the reply as-is. Guards the user-facing output against
+    ever showing JSON scaffolding."""
+    if not text:
+        return ""
+    matches = _TEXT_FIELD_RE.findall(text)
+    if matches:
+        out = []
+        for raw in matches:
+            try:
+                value = json.loads('"' + raw + '"')
+            except json.JSONDecodeError:
+                value = raw
+            if value.strip():
+                out.append(value.strip())
+        if out:
+            return "\n".join(out)
+    return text.strip()
+
+
 def _scale_box(box, width, height):
     """Scale a normalized [x0,y0,x1,y1] (0-1000) box to pixel coordinates."""
     if not box or len(box) != 4:
