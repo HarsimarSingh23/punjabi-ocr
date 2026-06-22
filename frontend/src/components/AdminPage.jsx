@@ -169,7 +169,7 @@ function AdminForm() {
               <Secret id="nvidia_api_key" label="NVIDIA API key" placeholder="nvapi-…"
                 value={values.nvidia_api_key} saved={saved.nvidia_api_key} onChange={set("nvidia_api_key")} />
               <Text id="nvidia_model" label="Vision model"
-                placeholder="meta/llama-3.2-11b-vision-instruct"
+                placeholder="google/diffusiongemma-26b-a4b-it"
                 value={values.nvidia_model} onChange={set("nvidia_model")}
                 hint="A vision-capable model from integrate.api.nvidia.com. In a multi-column layout it switches to a grounded JSON mode that returns per-line boxes (box accuracy depends on the model); single-column mode returns plain text." />
             </>
