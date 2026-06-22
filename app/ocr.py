@@ -216,14 +216,23 @@ async def run_nvidia_ocr_structured(
     JSON is unusable, so a weak spatial response never breaks OCR entirely.
     """
     reply = await _nvidia_chat(image_bytes, api_key, model, NVIDIA_LAYOUT_PROMPT)
+
+    # 1) clean, fully-valid JSON
     data = layout.extract_json(reply)
     if data:
         result = layout.words_from_vision_json(data, width, height)
         if result:
             return result
-    # Fallback: still return the model's text, just without boxes/columns.
-    if reply:
-        return _words_from_text(reply)
+
+    # 2) broken/truncated JSON — salvage the well-formed lines (keeps boxes)
+    salvaged = layout.words_from_salvaged(reply, width, height)
+    if salvaged:
+        return salvaged
+
+    # 3) last resort: readable text only — NEVER surface raw JSON to the user
+    text = layout.text_from_reply(reply)
+    if text:
+        return _words_from_text(text)
     raise HTTPException(422, "No text was detected in this image.")
 
 
