@@ -39,9 +39,13 @@ not straight across. With `page_columns` set to `auto` (or `2`), the engine
 returns word/line **bounding boxes** and the app reconstructs the correct
 reading order — left column fully, then the right column.
 
-Input — a two-column Punjabi (Gurmukhi) dictionary page:
+On a two-column Punjabi (Gurmukhi) dictionary page, the OCR returns a bounding
+box and the recognised text for each line. A few of the detected boxes
+(<span style="color:#f59e0b">header</span>,
+<span style="color:#0d9488">left column</span>,
+<span style="color:#e11d48">right column</span>) drawn back onto the page:
 
-![Example two-column dictionary page](docs/example-dictionary-page.png)
+![Detected bounding boxes with recognised words drawn on the page](docs/example-boxes.jpg)
 
 Running the NVIDIA vision engine (`google/diffusiongemma-26b-a4b-it`) in
 column-aware mode returns grounded boxes as JSON:
