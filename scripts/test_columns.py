@@ -1,5 +1,10 @@
-"""Run the column-aware OCR pipeline on one image and log every API call and
-every bounding box to logs/bounding_boxes.log.
+"""Run the column-aware reading-order pipeline on one image (Google/Azure,
+which return word boxes natively) and log every API call and bounding box to
+logs/bounding_boxes.log.
+
+For the NVIDIA provider (OpenCV-detected boxes + per-box OCR), use
+``scripts/test_cv_pipeline.py`` instead — it also draws the boxes and OCR'd
+text over the image.
 
 Usage:
     .venv/bin/python scripts/test_columns.py [path/to/image] [columns]
@@ -50,23 +55,16 @@ async def main():
     image_path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "test_image" / "img.png"
     settings = db.get_settings()
     columns = sys.argv[2] if len(sys.argv) > 2 else (settings.get("page_columns") or "2")
-    model_override = sys.argv[3] if len(sys.argv) > 3 else None
-    model = model_override or settings.get("nvidia_model") or ocr.NVIDIA_DEFAULT_MODEL
-
-    # the default run writes the canonical log; explicit model comparisons get
-    # their own file so they don't clobber it
-    if model_override:
-        safe = model_override.replace("/", "_").replace(".", "-")
-        log_path = ROOT / "logs" / f"bbox_{safe}.log"
-    else:
-        log_path = LOG_PATH
-    log = _setup_logger(log_path)
+    log = _setup_logger()
 
     data = image_path.read_bytes()
     with Image.open(io.BytesIO(data)) as im:
         width, height = im.width, im.height
 
     provider = settings.get("ocr_provider") or "google"
+    if provider == "nvidia":
+        print("NVIDIA uses OpenCV-detected boxes — run scripts/test_cv_pipeline.py instead.")
+        return
 
     log.info("=" * 78)
     log.info("PUNJABI OCR — COLUMN-AWARE BOUNDING-BOX LOG")
@@ -78,9 +76,7 @@ async def main():
     log.info("=" * 78)
 
     try:
-        if provider == "nvidia":
-            await _run_nvidia(log, data, settings, model, width, height)
-        elif provider == "azure":
+        if provider == "azure":
             await _run_boxed(
                 log,
                 columns,
@@ -97,66 +93,7 @@ async def main():
         log.info("!! API CALL FAILED: %s: %s", type(exc).__name__, exc)
 
     log.info("")
-    log.info("log written to: %s", log_path)
-
-
-async def _run_nvidia(log, data, settings, model, width, height):
-    key = settings.get("nvidia_api_key")
-    if not key:
-        log.info("ERROR: NVIDIA API key is not set.")
-        return
-
-    # ---- API CALL ----
-    log.info("")
-    log.info("### API CALL 1 — NVIDIA vision (structured, column-aware)")
-    log.info("POST %s", ocr.NVIDIA_URL)
-    log.info("model        : %s", model)
-    log.info("authorization: Bearer ****redacted****")
-    log.info("image payload: data:image/png;base64 (%d bytes raw)", len(data))
-    log.info("prompt:\n%s", ocr.NVIDIA_LAYOUT_PROMPT)
-
-    reply = await ocr._nvidia_chat(data, key, model, ocr.NVIDIA_LAYOUT_PROMPT)
-    log.info("")
-    log.info("--- RAW MODEL RESPONSE ---")
-    log.info("%s", reply)
-    log.info("--- END RAW RESPONSE (%d chars) ---", len(reply))
-
-    # ---- PARSE ----
-    parsed = layout.extract_json(reply)
-    if not parsed:
-        log.info("")
-        log.info("!! Could not parse JSON from the response — falling back to plain text.")
-        result = ocr._words_from_text(reply)
-        _log_words(log, result)
-        return
-
-    cols = parsed.get("columns") or ([{"lines": parsed["lines"]}] if parsed.get("lines") else [])
-    log.info("")
-    log.info("### PARSED LAYOUT — %d column(s)", len(cols))
-    for ci, col in enumerate(cols):
-        lines = col.get("lines") if isinstance(col, dict) else col
-        lines = lines or []
-        log.info("")
-        log.info("  COLUMN %d — %d line(s)", ci + 1, len(lines))
-        for li, line in enumerate(lines):
-            if not isinstance(line, dict):
-                continue
-            text = (line.get("text") or "").strip()
-            raw_box = line.get("box")
-            px = layout._scale_box(raw_box, width, height)
-            px_str = (
-                f"[{round(px[0])},{round(px[1])} -> {round(px[2])},{round(px[3])}]"
-                if px
-                else "None"
-            )
-            log.info("    line %02d  norm=%-22s px=%-26s  %s", li + 1, raw_box, px_str, text)
-
-    # ---- FINAL WORDS WITH BOXES ----
-    result = layout.words_from_vision_json(parsed, width, height)
-    if not result:
-        log.info("!! No usable words parsed; falling back to plain text.")
-        result = ocr._words_from_text(reply)
-    _log_words(log, result)
+    log.info("log written to: %s", LOG_PATH)
 
 
 async def _run_boxed(log, columns, coro):

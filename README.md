@@ -32,61 +32,45 @@ dashboard. Full walkthrough (and the Cloudflare Pages split option) in
    as a `.txt`, copy it, or run **🪄 Refine with AI** to fix OCR mistakes via
    the configured OpenAI / Azure OpenAI model.
 
-## Example: column-aware OCR with bounding boxes
+## Example: OpenCV box detection + per-line NVIDIA OCR
 
 Multi-column pages (dictionaries, newspapers) must be read one column at a time,
-not straight across. With `page_columns` set to `auto` (or `2`), the engine
-returns word/line **bounding boxes** and the app reconstructs the correct
-reading order — left column fully, then the right column.
+not straight across. With the NVIDIA engine, **OpenCV finds every text line's
+bounding box deterministically** (threshold → connected components → drop
+duplicate/overlapping boxes → merge nearby fragments into line boxes) — the
+model is never asked to invent coordinates. Each line is then cropped and OCR'd
+**in parallel**, and `page_columns` (`auto`/`2`/`3`) reorders the lines into
+correct reading order — left column fully, then the right column.
 
 Input — a two-column Punjabi (Gurmukhi) dictionary page:
 
 ![Example two-column dictionary page](docs/example-dictionary-page.png)
 
-Running the NVIDIA vision engine (`google/diffusiongemma-26b-a4b-it`) in
-column-aware mode returns grounded boxes as JSON:
+Running `app/cvboxes.py` on this page finds **109 line boxes** — cleanly
+wrapping each line of text in both columns while skipping the illustrations and
+the column-divider rule. Each box is cropped and sent to the NVIDIA-hosted
+`meta/llama-4-maverick-17b-128e-instruct` vision model in parallel
+(`ocr.run_nvidia_ocr_cv`); the boxes and recognized text look like this:
 
-```json
-{
-  "columns": [
-    { "lines": [
-      { "text": "ਅੰਗਸੂਤਰਾ", "box": [144, 23, 199, 36] },
-      { "text": "੧੦",        "box": [523, 23, 538, 36] }
-    ]},
-    { "lines": [
-      { "text": "ਅੰਗਸੂਤਰਾ, [ਪ੍ਰ. ਕਲਿਆਨਪੁਰ ਤੋਂ ਮ. ਕੰਨ+ਹਵਿੰਦਰ", "box": [116, 56, 477, 70] },
-      { "text": "ਪੂ. ਸਿਖ ਬੋਜ", "box": [149, 75, 233, 89] }
-    ]}
-  ]
-}
-```
-
-Boxes (normalised 0–1000) are scaled to image pixels and split into per-word
-sub-boxes; the words are then emitted in reading order. For this page the engine
-found **3 regions** (header → left column → right column) and **365 words, all
-with boxes**. The reconstructed text begins:
-
-```
-ਅੰਗਸੂਤਰਾ
-੧੦
-ਅੰਗਸੂਤਰਾ, [ਪ੍ਰ. ਕਲਿਆਨਪੁਰ ਤੋਂ ਮ. ਕੰਨ+ਹਵਿੰਦਰ
-ਪੂ. ਸਿਖ ਬੋਜ
-ਸਿਸ ਸਿੰਘ ਖੋਤਰੀ
-...
-```
+![Detected boxes with OCR'd text overlaid](docs/cv-pipeline-example.jpg)
 
 > Notes:
-> - `google/diffusiongemma-26b-a4b-it` is the NVIDIA-hosted model that works for
->   this — `llama-3.2-*-vision` either hallucinates boxes or times out. Do **not**
->   set `chat_template_kwargs.enable_thinking` (it returns empty content);
->   `temperature=0` is used.
-> - Box geometry and column order are reliable; raw text has OCR errors (it's a
->   general vision model, not a dedicated Gurmukhi OCR engine). Use **Refine with
->   AI**, or switch the OCR engine to Google Cloud Vision for more literal text
->   with the same column-aware reordering.
-> - Reproduce locally: `.venv/bin/python scripts/test_columns.py <image> 2` —
->   the full API call and every bounding box are written to
->   `logs/bounding_boxes.log`.
+> - Detecting boxes with classical image processing (not the model) means box
+>   geometry is exact and free — no model call can hallucinate or omit a
+>   coordinate. The model only has to *read* an already-isolated line.
+> - The pipeline filters out non-text page furniture before it can contaminate
+>   merging: a hole-filter (`RETR_CCOMP`) drops the spurious "interior of the
+>   page border" contour that `RETR_EXTERNAL` would otherwise swallow every
+>   glyph into, and a size-outlier filter drops thin column-divider rules and
+>   illustrations/photos.
+> - Raw text still has OCR errors (it's a general vision model, not a dedicated
+>   Gurmukhi OCR engine) — use **Refine with AI**, or switch the OCR engine to
+>   Google Cloud Vision for more literal text with the same column-aware
+>   reordering.
+> - Reproduce locally: `.venv/bin/python scripts/test_cv_pipeline.py <image> <columns>`
+>   — logs every box + OCR'd text to `logs/bounding_boxes.log` and writes the
+>   annotated image to `docs/cv-pipeline-example.jpg`. For Google/Azure (which
+>   return boxes natively), use `scripts/test_columns.py` instead.
 
 ## Setup
 
@@ -129,10 +113,11 @@ Open <http://localhost:8000/admin>:
     Vision resource (uses the Image Analysis 4.0 Read API).
   - *NVIDIA vision*: an `nvapi-…` key from
     [integrate.api.nvidia.com](https://integrate.api.nvidia.com) plus a
-    vision-capable model (default `meta/llama-3.2-11b-vision-instruct`). This
-    engine runs OCR through a vision LLM and returns plain text **without word
-    boxes** — words animate by lifting off the scanned image instead of from
-    precise boxes.
+    vision-capable model (default `meta/llama-4-maverick-17b-128e-instruct`).
+    OpenCV detects each text line's bounding box on the server (see the example
+    below), then every line is cropped and OCR'd through the vision LLM in
+    parallel — so this engine *does* return precise word boxes, despite using a
+    general vision model rather than a dedicated OCR API.
 - **AI text refinement** — optional, used by the "Refine with AI" button.
   Choose **OpenAI** (API key + model) or **Azure OpenAI** (endpoint, API key,
   deployment name, API version).
@@ -196,7 +181,9 @@ unchanged for local development.
 ```
 app/
   main.py      FastAPI routes (upload, OCR, refine, download, admin, SPA serving)
-  ocr.py       Google Cloud Vision + Azure AI Vision REST calls + word/box parsing
+  ocr.py       Google Cloud Vision + Azure AI Vision + NVIDIA vision LLM REST calls
+  cvboxes.py   OpenCV text-line box detection for the NVIDIA engine (no model call)
+  layout.py    column-aware reading-order reconstruction from word/line boxes
   refine.py    OpenAI / Azure OpenAI chat-completion cleanup
   db.py        SQLite storage (settings + results)
 frontend/

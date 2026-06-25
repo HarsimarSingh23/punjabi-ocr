@@ -1,19 +1,20 @@
 """OCR engines: Google Cloud Vision, Azure AI Vision, and an NVIDIA-hosted
 vision LLM, via their REST APIs."""
 
+import asyncio
 import base64
 
 import httpx
 from fastapi import HTTPException
 
-from . import layout
+from . import cvboxes, layout
 
 VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 AZURE_ANALYZE_PATH = "/computervision/imageanalysis:analyze"
 AZURE_API_VERSION = "2023-10-01"
 
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-NVIDIA_DEFAULT_MODEL = "google/diffusiongemma-26b-a4b-it"
+NVIDIA_DEFAULT_MODEL = "meta/llama-4-maverick-17b-128e-instruct"
 NVIDIA_OCR_PROMPT = (
     "You are an OCR engine. Transcribe ALL text in this image exactly as it "
     "appears, preserving the original line breaks. The text is primarily Punjabi "
@@ -22,17 +23,15 @@ NVIDIA_OCR_PROMPT = (
     "left-to-right — never read straight across the columns. Output only the raw "
     "transcribed text — no translation, no transliteration, no commentary, no markdown."
 )
-# Structured, column-aware mode: ask the model to ground each line with a box.
-NVIDIA_LAYOUT_PROMPT = (
-    "You are a layout-aware OCR engine. The page is primarily Punjabi (Gurmukhi). "
-    "It may have multiple columns separated by vertical gaps or rules. Return ONLY "
-    "valid JSON (no markdown, no commentary) in exactly this schema:\n"
-    '{"columns": [{"lines": [{"text": "<line text>", "box": [x0, y0, x1, y1]}]}]}\n'
-    "Order columns left-to-right; within each column order lines top-to-bottom. "
-    "Each box is the line's bounding box as integers on a 0-1000 grid relative to "
-    "the image (x0,y0 = top-left corner, x1,y1 = bottom-right corner, origin at the "
-    "image's top-left). Transcribe text exactly; do not translate or transliterate."
+# Per-box mode (see run_nvidia_ocr_cv): OpenCV has already isolated a single
+# line, so the model just has to read it — no layout/column instructions needed.
+NVIDIA_CROP_PROMPT = (
+    "Transcribe the Punjabi (Gurmukhi) text in this image exactly as it appears. "
+    "This is a single line cropped from a larger page. Output only the raw "
+    "transcribed text on one line — no translation, no transliteration, no "
+    "commentary, no markdown. If there is no legible text, output nothing."
 )
+NVIDIA_CV_MAX_CONCURRENCY = 6
 
 # How Vision's detectedBreak types translate into text between words.
 _BREAKS = {
@@ -202,38 +201,50 @@ async def run_nvidia_ocr(image_bytes: bytes, api_key: str, model: str | None = N
     return _words_from_text(text)
 
 
-async def run_nvidia_ocr_structured(
-    image_bytes: bytes,
-    api_key: str,
-    model: str | None,
-    width: int,
-    height: int,
-) -> dict:
-    """Column-aware OCR via the vision LLM with grounded line boxes.
+async def run_nvidia_ocr_cv(image_bytes: bytes, api_key: str, model: str | None = None) -> dict:
+    """Column-aware OCR via OpenCV-detected line boxes + one model call per box.
 
-    Asks the model for structured JSON (columns -> lines -> {text, box}) and maps
-    the normalized boxes to pixels. Falls back to plain text OCR if the model's
-    JSON is unusable, so a weak spatial response never breaks OCR entirely.
+    OpenCV finds each text line's pixel box deterministically (see
+    ``cvboxes.detect_text_boxes``) — the model is never asked to invent
+    coordinates, it only has to read the (small, already-isolated) crop it's
+    given, in parallel across all boxes. Falls back to whole-image plain-text
+    OCR if no boxes are found or every crop call fails.
     """
-    reply = await _nvidia_chat(image_bytes, api_key, model, NVIDIA_LAYOUT_PROMPT)
+    boxes, width, height = cvboxes.detect_text_boxes(image_bytes)
+    if not boxes:
+        return await run_nvidia_ocr(image_bytes, api_key, model)
 
-    # 1) clean, fully-valid JSON
-    data = layout.extract_json(reply)
-    if data:
-        result = layout.words_from_vision_json(data, width, height)
-        if result:
-            return result
+    crops = cvboxes.crops_for_boxes(image_bytes, boxes)
+    sem = asyncio.Semaphore(NVIDIA_CV_MAX_CONCURRENCY)
 
-    # 2) broken/truncated JSON — salvage the well-formed lines (keeps boxes)
-    salvaged = layout.words_from_salvaged(reply, width, height)
-    if salvaged:
-        return salvaged
+    async def _ocr_crop(crop_bytes: bytes) -> str:
+        if not crop_bytes:
+            return ""
+        async with sem:
+            try:
+                return await _nvidia_chat(crop_bytes, api_key, model, NVIDIA_CROP_PROMPT)
+            except HTTPException:
+                return ""  # one failed crop shouldn't sink the whole page
 
-    # 3) last resort: readable text only — NEVER surface raw JSON to the user
-    text = layout.text_from_reply(reply)
-    if text:
-        return _words_from_text(text)
-    raise HTTPException(422, "No text was detected in this image.")
+    texts = await asyncio.gather(*(_ocr_crop(c) for c in crops))
+
+    lines = [
+        {"text": text.strip(), "box": box}
+        for box, text in zip(boxes, texts)
+        if text.strip()
+    ]
+    if not lines:
+        return await run_nvidia_ocr(image_bytes, api_key, model)
+
+    words = []
+    for line in lines:
+        toks = layout.split_line_into_words(line["text"], line["box"])
+        for i, tok in enumerate(toks):
+            tok["suffix"] = "\n" if i == len(toks) - 1 else " "
+            words.append(tok)
+
+    full_text = "\n".join(line["text"] for line in lines)
+    return {"width": width, "height": height, "words": words, "full_text": full_text}
 
 
 def _words_from_text(text: str) -> dict:

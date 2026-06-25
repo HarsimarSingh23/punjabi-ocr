@@ -36,7 +36,7 @@ step 3 to set your keys. Or follow the manual steps below.
    | `NVIDIA_API_KEY` | your `nvapi-…` key |
    | `ADMIN_TOKEN` | a long random string — `openssl rand -hex 24` |
    | `OCR_PROVIDER` | `nvidia` *(already defaulted by the blueprint)* |
-   | `NVIDIA_MODEL` | `meta/llama-3.2-11b-vision-instruct` *(already defaulted)* |
+   | `NVIDIA_MODEL` | `meta/llama-4-maverick-17b-128e-instruct` *(already defaulted)* |
 
    Using Azure/Google/OpenAI instead? Add those vars too — see the table in
    [README.md](README.md#configure-keys-admin-portal). No `ALLOWED_ORIGINS` or

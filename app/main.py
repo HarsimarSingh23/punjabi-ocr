@@ -162,14 +162,8 @@ async def run_ocr(rid: str):
                 "NVIDIA API key is not configured. Open the Admin portal (/admin) to set it.",
             )
         model = settings.get("nvidia_model")
-        if columns == "1":
-            result = await ocr.run_nvidia_ocr(image_bytes, api_key, model)
-        else:
-            # column-aware, grounded mode needs the true image size to map boxes
-            width, height = _image_size(image_bytes)
-            result = await ocr.run_nvidia_ocr_structured(
-                image_bytes, api_key, model, width, height
-            )
+        result = await ocr.run_nvidia_ocr_cv(image_bytes, api_key, model)
+        result = layout.reading_order_from_boxes(result, columns)
     else:
         api_key = settings.get("google_api_key")
         if not api_key:
@@ -181,19 +175,6 @@ async def run_ocr(rid: str):
         result = layout.reading_order_from_boxes(result, columns)
     db.save_ocr(rid, json.dumps(result, ensure_ascii=False), result["full_text"])
     return result
-
-
-def _image_size(data: bytes) -> tuple[int, int]:
-    """Best-effort pixel dimensions of an image; (0, 0) if it can't be read."""
-    import io
-
-    try:
-        from PIL import Image
-
-        with Image.open(io.BytesIO(data)) as img:
-            return img.width, img.height
-    except Exception:  # noqa: BLE001 — dimensions are a nice-to-have, not critical
-        return 0, 0
 
 
 @app.post("/api/refine/{rid}")
