@@ -31,10 +31,15 @@ def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 5000")
+    # WAL lets the read endpoints run while a write is in flight; without it a
+    # concurrent reader and writer contend on a single global lock.
+    with contextlib.suppress(sqlite3.Error):  # e.g. a filesystem without WAL support
+        conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 
 def init() -> None:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.closing(_conn()) as c, c:
         c.execute(
             "CREATE TABLE IF NOT EXISTS settings ("
