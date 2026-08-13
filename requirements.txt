@@ -1,8 +1,11 @@
 fastapi>=0.110
-uvicorn[standard]>=0.29
 httpx>=0.27
-python-multipart>=0.0.9
-pillow>=10.3
-pillow-heif>=0.16
-opencv-python-headless==4.12.0.88
+langchain-openai==1.3.2
+langchain==1.3.14
+langgraph==1.2.5
 numpy>=1.26
+opencv-python-headless==4.12.0.88
+pillow-heif>=0.16
+pillow>=10.3
+python-multipart>=0.0.9
+uvicorn[standard]>=0.29
